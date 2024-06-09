@@ -1,6 +1,6 @@
 /*
-   Kraken64 Demo: https://github.com/jasoncoon/kraken64-demo
-   Copyright (C) 2023 Jason Coon
+   Kraken64 QT Py Demo: https://github.com/jasoncoon/kraken64-qt-py
+   Copyright (C) 2024 Jason Coon
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
