@@ -17,6 +17,7 @@
 */
 
 #include <FastLED.h> // https://github.com/FastLED/FastLED
+#include "Adafruit_FreeTouch.h" //https://github.com/adafruit/Adafruit_FreeTouch
 
 FASTLED_USING_NAMESPACE
 
@@ -35,6 +36,33 @@ CRGB leds[NUM_LEDS];
 
 uint8_t brightness = 128;
 
+Adafruit_FreeTouch touch0 = Adafruit_FreeTouch(A0, OVERSAMPLE_4, RESISTOR_0, FREQ_MODE_NONE);
+Adafruit_FreeTouch touch1 = Adafruit_FreeTouch(A1, OVERSAMPLE_4, RESISTOR_0, FREQ_MODE_NONE);
+Adafruit_FreeTouch touch2 = Adafruit_FreeTouch(A6, OVERSAMPLE_4, RESISTOR_0, FREQ_MODE_NONE);
+Adafruit_FreeTouch touch3 = Adafruit_FreeTouch(A7, OVERSAMPLE_4, RESISTOR_0, FREQ_MODE_NONE);
+
+#define touchPointCount 4
+
+// These values were discovered using the commented-out Serial.print statements in handleTouch below
+
+// minimum values for each touch pad, used to filter out noise
+uint16_t touchMin[touchPointCount] = { 910, 664, 783, 828 };
+
+// maximum values for each touch pad, used to determine when a pad is touched
+uint16_t touchMax[touchPointCount] = { 1016, 1016, 1016, 1016 };
+
+// raw capacitive touch sensor readings
+uint16_t touchRaw[touchPointCount] = { 0, 0, 0, 0 };
+
+// capacitive touch sensor readings, mapped/scaled one one byte each (0-255)
+uint8_t touch[touchPointCount] = { 0, 0, 0, 0 };
+
+// coordinates of the touch points
+uint8_t touchPointX[touchPointCount] = { 255, 0, 0, 255 };
+uint8_t touchPointY[touchPointCount] = { 0, 0, 255, 255 };
+
+boolean activeWaves = false;
+
 // Forward declarations of an array of cpt-city gradient palettes, and
 // a count of how many there are.
 extern const TProgmemRGBGradientPalettePtr gGradientPalettes[];
@@ -51,6 +79,15 @@ uint8_t secondsPerPalette = 10;
 void setup()
 {
   Serial.begin(115200);
+
+  if (!touch0.begin())
+    Serial.println("Failed to begin qt on pin A0");
+  if (!touch1.begin())
+    Serial.println("Failed to begin qt on pin A1");
+  if (!touch2.begin())
+    Serial.println("Failed to begin qt on pin A6");
+  if (!touch3.begin())
+    Serial.println("Failed to begin qt on pin A7");
 
   // Serial.println("serial delay...");
   // delay(3000);
@@ -71,6 +108,8 @@ void loop()
   // Add entropy to random number generator; we use a lot of it.
   random16_add_entropy(random(256));
 
+  handleTouch();
+
   // change to a new cpt-city gradient palette
   EVERY_N_SECONDS(secondsPerPalette)
   {
@@ -85,10 +124,178 @@ void loop()
     nblendPaletteTowardPalette(gCurrentPalette, gTargetPalette, 8);
   }
 
-  colorWaves();
+  if (!activeWaves)
+    colorWaves();
+
+  touchDemo();
 
   // insert a delay to keep the framerate modest
   FastLED.delay(1000 / FRAMES_PER_SECOND);
+}
+
+bool touchChanged = true;
+
+void handleTouch() {
+  for (uint8_t i = 0; i < touchPointCount; i++) {
+    if (i == 0) touchRaw[i] = touch0.measure();
+    else if (i == 1) touchRaw[i] = touch1.measure();
+    else if (i == 2) touchRaw[i] = touch2.measure();
+    else if (i == 3) touchRaw[i] = touch3.measure();
+
+    // // uncomment to display raw touch values in the serial monitor/plotter
+    // Serial.print(touchRaw[i]);
+    // Serial.print(" ");
+
+    if (touchRaw[i] < touchMin[i]) {
+      touchMin[i] = touchRaw[i];
+      touchChanged = true;
+    }
+
+    if (touchRaw[i] > touchMax[i]) {
+      touchMax[i] = touchRaw[i];
+      touchChanged = true;
+    }
+
+    touch[i] = map(touchRaw[i], touchMin[i], touchMax[i], 0, 255);
+
+    // // uncomment to display mapped/scaled touch values in the serial monitor/plotter
+    //    Serial.print(touch[i]);
+    //    Serial.print(" ");
+  }
+
+  // // uncomment to display raw and/or mapped/scaled touch values in the serial monitor/plotter
+  // Serial.println();
+
+  // uncomment to display raw, scaled, min, max touch values in the serial monitor/plotter
+  //  if (touchChanged) {
+  //    for (uint8_t i = 0; i < touchPointCount; i++) {
+  //      Serial.print(touchRaw[i]);
+  //      Serial.print(" ");
+  //      Serial.print(touch[i]);
+  //      Serial.print(" ");
+  //      Serial.print(touchMin[i]);
+  //      Serial.print(" ");
+  //      Serial.print(touchMax[i]);
+  //      Serial.print(" ");
+  //    }
+  //
+  //    Serial.println();
+  //
+  //    touchChanged = false;
+  //  }
+}
+
+// adds a color to a pixel given it's XY coordinates and a "thickness" of the logical pixel
+// since we're using a sparse logical grid for mapping, there isn't an LED at every XY coordinate
+// thickness adds a little "fuzziness"
+void addColorXY(int x, int y, CRGB color, uint8_t thickness = 0)
+{
+  // ignore coordinates outside of our one byte map range
+  if (x < 0 || x > 255 || y < 0 || y > 255) return;
+
+  // loop through all of the LEDs
+  for (uint8_t i = 0; i < NUM_LEDS; i++) {
+    // get the XY coordinates of the current LED
+    uint8_t ix = coordsX[i];
+    uint8_t iy = coordsY[i];
+
+    // are the current LED's coordinates within the square centered
+    // at X,Y, with width and height of thickness?
+    if (ix >= x - thickness && ix <= x + thickness &&
+        iy >= y - thickness && iy <= y + thickness) {
+
+      // add to the color instead of just setting it
+      // so that colors blend
+      // FastLED automatically prevents overflowing over 255
+      leds[i] += color;
+    }
+  }
+}
+
+// algorithm from http://en.wikipedia.org/wiki/Midpoint_circle_algorithm
+void drawCircle(int x0, int y0, int radius, const CRGB color, uint8_t thickness = 0)
+{
+  int a = radius, b = 0;
+  int radiusError = 1 - a;
+
+  if (radius == 0) {
+    addColorXY(x0, y0, color, thickness);
+    return;
+  }
+
+  while (a >= b)
+  {
+    addColorXY(a + x0, b + y0, color, thickness);
+    addColorXY(b + x0, a + y0, color, thickness);
+    addColorXY(-a + x0, b + y0, color, thickness);
+    addColorXY(-b + x0, a + y0, color, thickness);
+    addColorXY(-a + x0, -b + y0, color, thickness);
+    addColorXY(-b + x0, -a + y0, color, thickness);
+    addColorXY(a + x0, -b + y0, color, thickness);
+    addColorXY(b + x0, -a + y0, color, thickness);
+
+    b++;
+    if (radiusError < 0)
+      radiusError += 2 * b + 1;
+    else
+    {
+      a--;
+      radiusError += 2 * (b - a + 1);
+    }
+  }
+}
+
+const uint8_t waveCount = 8;
+
+// track the XY coordinates and radius of each wave
+uint16_t radii[waveCount];
+uint8_t waveX[waveCount];
+uint8_t waveY[waveCount];
+CRGB waveColor[waveCount];
+
+const uint16_t maxRadius = 512;
+
+void touchDemo() {
+  // fade all of the LEDs a small amount each frame
+  // increasing this number makes the waves fade faster
+  fadeToBlackBy(leds, NUM_LEDS, 30);
+
+  for (uint8_t i = 0; i < touchPointCount; i++) {
+    // start new waves when there's a new touch
+    if (touch[i] > 127 && radii[i] == 0) {
+      radii[i] = 32;
+      waveX[i] = touchPointX[i];
+      waveY[i] = touchPointY[i];
+      waveColor[i] = CHSV(random8(), 255, 255);
+    }
+  }
+
+  activeWaves = false;
+
+  for (uint8_t i = 0; i < waveCount; i++)
+  {
+    // increment radii if it's already been set in motion
+    if (radii[i] > 0 && radii[i] < maxRadius) radii[i] = radii[i] + 8;
+
+    // reset waves already at max
+    if (radii[i] >= maxRadius) {
+      activeWaves = true;
+      radii[i] = 0;
+    }
+
+    if (radii[i] == 0)
+      continue;
+
+    activeWaves = true;
+
+    CRGB color = waveColor[i];
+
+    uint8_t x = waveX[i];
+    uint8_t y = waveY[i];
+
+    // draw waves starting from the corner closest to each touch sensor
+    drawCircle(x, y, radii[i], color, 4);
+  }
 }
 
 // ColorWavesWithPalettes by Mark Kriegsman: https://gist.github.com/kriegsman/8281905786e8b2632aeb
