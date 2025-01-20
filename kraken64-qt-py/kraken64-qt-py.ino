@@ -37,7 +37,7 @@ uint8_t brightness = 128;
 
 // Forward declarations of an array of cpt-city gradient palettes, and
 // a count of how many there are.
-extern const TProgmemRGBGradientPalettePtr gGradientPalettes[];
+extern const TProgmemRGBGradientPaletteRef gGradientPalettes[];
 
 uint8_t gCurrentPaletteNumber = 0;
 
@@ -61,7 +61,7 @@ void setup()
   FastLED.setBrightness(brightness);
   // FastLED.setMaxPowerInVoltsAndMilliamps(5, MILLI_AMPS);
   fill_solid(leds, NUM_LEDS, CRGB::Black);
-  show();
+  FastLED.show();
 }
 
 void loop()
