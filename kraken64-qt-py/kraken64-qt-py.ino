@@ -37,7 +37,7 @@ uint8_t brightness = 128;
 
 // Forward declarations of an array of cpt-city gradient palettes, and
 // a count of how many there are.
-extern const TProgmemRGBGradientPalettePtr gGradientPalettes[];
+extern const TProgmemRGBGradientPaletteRef gGradientPalettes[];
 
 uint8_t gCurrentPaletteNumber = 0;
 
