@@ -16,12 +16,12 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <FastLED.h> // https://github.com/FastLED/FastLED
+#include <FastLED.h> // https://github.com/kbob/FastLED.git#hey-jason
 
 FASTLED_USING_NAMESPACE
 
 #define DATA_PIN MOSI
-#define LED_TYPE WS2812B
+#define LED_TYPE WS2816
 #define COLOR_ORDER GRB
 #define NUM_LEDS 64
 
